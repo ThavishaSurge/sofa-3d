@@ -219,7 +219,9 @@ export function createApp(env = process.env) {
         const raw = typeof req.body.productJson === 'string' ? JSON.parse(req.body.productJson) : req.body.productJson;
         sp = normalizeShopifyProduct(raw);
       } else {
-        sp = await fetchShopifyProduct(req.body?.shopDomain || p.config.shopify?.shopDomain, req.body?.handle || p.config.shopify?.handle, shopEnv());
+        // a connected store is always read through the Admin API (its storefront domain differs from SHOPIFY_SHOP)
+        const senv = shopEnv();
+        sp = await fetchShopifyProduct(adminMode(senv) ? env.SHOPIFY_SHOP : req.body?.shopDomain || p.config.shopify?.shopDomain, req.body?.handle || p.config.shopify?.handle, senv);
       }
     } catch (e) {
       return res.status(400).json({ error: e.message });
@@ -263,10 +265,11 @@ export function createApp(env = process.env) {
     for (const handle of handles) {
       const r = { handle };
       try {
-        const sp = await fetchShopifyProduct(s.shopDomain || env.SHOPIFY_SHOP, handle, shopEnv());
+        const senv = shopEnv();
+        const sp = await fetchShopifyProduct(adminMode(senv) ? env.SHOPIFY_SHOP : s.shopDomain || env.SHOPIFY_SHOP, handle, senv);
         const row = db.prepare('SELECT id FROM products WHERE shopify_handle = ?').get(norm(sp.handle || handle));
         let p = row && getProduct(row.id);
-        r.title = sp.title; r.status = sp.status; r.variants = sp.variants.length;
+        r.title = sp.title; r.status = sp.status; r.tags = sp.tags; r.variants = sp.variants.length;
         if (!p && !template) throw new Error('Not in the app yet and no template product chosen');
         r.action = p ? 'updated' : 'created';
         const base = p ? p.config : { ...template.config, shopify: { ...template.config.shopify, handle: '', fixed: {} }, variants: [] };
