@@ -1,0 +1,31 @@
+{%- comment -%}
+  Theme app block – lets staff add the 3D viewer from the theme editor (drag & drop) instead of editing code.
+  Part of the optional Shopify app (Phase 2). See shopify/README.md.
+{%- endcomment -%}
+{%- if product and block.settings.app_url != blank -%}
+  <div {{ block.shopify_attributes }}
+       data-sofa3d-handle="{{ product.handle }}"
+       data-variant="{{ product.selected_or_first_available_variant.id }}"
+       data-aspect="{{ block.settings.aspect }}"
+       {% if block.settings.show_ui %}data-ui="1"{% endif %}
+       {% if block.settings.auto_rotate %}data-autorotate="1"{% endif %}
+       data-title="{{ product.title | escape }} – 3D view"
+       style="margin: {{ block.settings.margin }}px 0;"></div>
+  <script src="{{ block.settings.app_url | split: '/embed.js' | first }}/embed.js" defer></script>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "3D sofa configurator",
+  "target": "section",
+  "enabled_on": { "templates": ["product"] },
+  "settings": [
+    { "type": "text", "id": "app_url", "label": "Configurator URL", "placeholder": "https://your-app.up.railway.app", "info": "The Railway URL of the Sofa 3D app" },
+    { "type": "select", "id": "aspect", "label": "Shape", "default": "4/3",
+      "options": [ { "value": "1/1", "label": "Square" }, { "value": "4/3", "label": "Landscape 4:3" }, { "value": "16/9", "label": "Wide 16:9" }, { "value": "3/4", "label": "Portrait 3:4" } ] },
+    { "type": "checkbox", "id": "show_ui", "label": "Show option buttons inside the 3D view", "default": false },
+    { "type": "checkbox", "id": "auto_rotate", "label": "Auto-rotate", "default": false },
+    { "type": "range", "id": "margin", "label": "Vertical spacing", "min": 0, "max": 40, "step": 4, "unit": "px", "default": 0 }
+  ]
+}
+{% endschema %}

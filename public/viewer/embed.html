@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>__TITLE__ – 3D</title>
+<script type="importmap">
+{ "imports": {
+  "three": "/vendor/three/build/three.module.js",
+  "three/addons/": "/vendor/three/examples/jsm/"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  #stage { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+  #stage:active { cursor: grabbing; }
+  #status { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    font-size: 13px; color: #555; background: rgba(255,255,255,.85); padding: 8px 14px;
+    border-radius: 999px; pointer-events: none; transition: opacity .2s; display: flex; gap: 8px; align-items: center; }
+  #status.hidden { opacity: 0; }
+  #status.error { color: #b42318; }
+  .spin { width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #333; border-radius: 50%; animation: s 0.8s linear infinite; }
+  #status.error .spin { display: none; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  .tools { position: absolute; right: 10px; top: 10px; display: flex; gap: 6px; }
+  .tools button { width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(0,0,0,.1);
+    background: rgba(255,255,255,.9); cursor: pointer; font-size: 15px; line-height: 1; color: #222; }
+  .hint { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); font-size: 11px; color: #777;
+    background: rgba(255,255,255,.7); padding: 4px 10px; border-radius: 999px; pointer-events: none; white-space: nowrap; transition: opacity .6s; }
+  #ui { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 12px 12px; display: none;
+    background: rgba(255,255,255,.92); border-top: 1px solid rgba(0,0,0,.06); max-height: 45%; overflow: auto; }
+  body.with-ui #ui { display: block; }
+  body.with-ui .hint { display: none; }
+  .opt { margin-top: 6px; }
+  .opt-name { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #555; margin-bottom: 4px; }
+  .vals { display: flex; flex-wrap: wrap; gap: 6px; }
+  .val { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 999px;
+    border: 1px solid #ddd; background: #fff; font-size: 12px; cursor: pointer; color: #222; }
+  .val.no-sw { padding-left: 10px; }
+  .val.on { border-color: #111; box-shadow: 0 0 0 1px #111; }
+  .sw { width: 20px; height: 20px; border-radius: 50%; background-size: cover; background-position: center; border: 1px solid rgba(0,0,0,.12); }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="status"><span class="spin"></span><span id="status-text">Loading 3D model…</span></div>
+<div class="tools">
+  <button id="btn-reset" title="Reset view" aria-label="Reset view">⟲</button>
+  <button id="btn-full" title="Full screen" aria-label="Full screen">⤢</button>
+</div>
+<div class="hint" id="hint">Drag to rotate · scroll or pinch to zoom</div>
+<div id="ui"></div>
+<script>window.__SOFA3D_CONFIG__ = __CONFIG__;</script>
+<script type="module" src="/viewer/embed-main.js"></script>
+</body>
+</html>

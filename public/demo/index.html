@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock Shopify product page</title>
+<style>
+  body { margin: 0; font-family: Georgia, serif; color: #222; background: #fff; }
+  .announce { background: #222; color: #fff; text-align: center; font: 12px system-ui; padding: 8px; }
+  header { padding: 18px 32px; border-bottom: 1px solid #eee; font-size: 22px; letter-spacing: .08em; }
+  .wrap { display: grid; grid-template-columns: 1.3fr 1fr; gap: 40px; max-width: 1200px; margin: 30px auto; padding: 0 24px; }
+  @media (max-width: 800px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-weight: 400; margin: 0 0 6px; }
+  .price { font: 18px system-ui; margin-bottom: 20px; }
+  fieldset { border: 0; padding: 0; margin: 0 0 16px; }
+  legend { font: 600 13px system-ui; margin-bottom: 8px; }
+  fieldset label { display: inline-block; margin: 0 6px 6px 0; }
+  fieldset input { position: absolute; opacity: 0; }
+  fieldset span { display: inline-block; padding: 8px 16px; border: 1px solid #ccc; border-radius: 40px; font: 13px system-ui; cursor: pointer; }
+  fieldset input:checked + span { background: #222; color: #fff; border-color: #222; }
+  .add { width: 100%; padding: 14px; background: #222; color: #fff; border: 0; font: 15px system-ui; margin-top: 10px; }
+  .vid { font: 12px ui-monospace, monospace; color: #888; margin-top: 10px; }
+  .media { background: #f5f3ef; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div class="announce">Mock Shopify (Dawn-style) product page – for testing the 3D bridge</div>
+<header>FURNITURE CO.</header>
+<section class="shopify-section">
+  <div class="wrap">
+    <div class="media" id="media"></div>
+    <div>
+      <h1 id="title">Loading…</h1>
+      <div class="price">£1,299.00</div>
+      <form method="post" action="/cart/add" id="product-form">
+        <div id="options"></div>
+        <input type="hidden" name="id" id="variant-id">
+        <button class="add" type="button">Add to cart</button>
+        <div class="vid">Selected variant id: <span id="vid-label"></span></div>
+      </form>
+    </div>
+  </div>
+</section>
+<script>
+// Mimics Shopify's Dawn theme: radio fieldsets -> resolve variant -> update hidden input[name=id] + ?variant= URL
+(async function () {
+  const qs = new URLSearchParams(location.search);
+  const app = qs.get('app') || location.origin;
+  const productId = qs.get('product');
+  const cfg = await fetch(app + '/api/public/products/' + productId).then((r) => r.json());
+  // Build a Shopify-like product from the configurator data
+  const options = cfg.options.map((o) => ({ name: o.name, values: o.values.map((v) => v.name) }));
+  const variants = cfg.variants.map((v) => ({ id: v.id, options: cfg.options.map((o) => (o.values.find((x) => x.id === v.selections[o.id]) || {}).name) }));
+  document.getElementById('title').textContent = cfg.name.replace(' (demo)', '');
+
+  const start = variants.find((v) => v.id === qs.get('variant')) || variants[0];
+  const box = document.getElementById('options');
+  options.forEach((o, i) => {
+    const fs = document.createElement('fieldset');
+    fs.innerHTML = '<legend>' + o.name + '</legend>' + o.values.map((v) =>
+      '<label><input type="radio" name="' + o.name + '-1" value="' + v + '"' + (start.options[i] === v ? ' checked' : '') + '><span>' + v + '</span></label>').join('');
+    box.appendChild(fs);
+  });
+  const idInput = document.getElementById('variant-id');
+  function update() {
+    const sel = options.map((o) => (box.querySelector('input[name="' + o.name + '-1"]:checked') || {}).value);
+    const v = variants.find((x) => x.options.every((val, i) => val === sel[i]));
+    if (!v) return;
+    idInput.value = v.id;
+    document.getElementById('vid-label').textContent = v.id;
+    const u = new URL(location.href); u.searchParams.set('variant', v.id);
+    history.replaceState({}, '', u);
+  }
+  box.addEventListener('change', update);
+  update();
+
+  // ---- the merchant's embed snippet ----
+  const media = document.getElementById('media');
+  media.innerHTML = qs.get('mode') === 'handle'
+    ? '<div data-sofa3d-handle="' + qs.get('handle') + '" data-variant="' + idInput.value + '" data-aspect="4/3"></div>'
+    : '<div data-sofa3d="' + productId + '" data-variant="' + idInput.value + '" data-aspect="4/3"></div>';
+  const s = document.createElement('script');
+  s.src = app + '/embed.js';
+  s.defer = true;
+  document.body.appendChild(s);
+})();
+</script>
+</body>
+</html>

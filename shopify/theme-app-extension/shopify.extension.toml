@@ -1,0 +1,5 @@
+# Theme app extension for the optional Shopify app (Phase 2).
+# Create the app with `shopify app init`, then copy this folder to extensions/sofa-3d/
+# and run `shopify app deploy`. See shopify/README.md.
+name = "sofa-3d"
+type = "theme"

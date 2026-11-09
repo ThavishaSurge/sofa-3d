@@ -1,0 +1,21 @@
+{%- comment -%}
+  Sofa 3D viewer – theme snippet (no Shopify app needed).
+
+  1. Online Store → Themes → … → Edit code → Snippets → Add a new snippet "sofa-3d", paste this file.
+  2. Set APP_URL below to your Railway URL (no trailing slash).
+  3. Render it where the product image gallery is, e.g. in sections/main-product.liquid:
+       {% render 'sofa-3d', product: product %}
+     or simply paste the two lines inside a "Custom Liquid" block on the product template.
+
+  Products without a 3D configurator render nothing (the placeholder hides itself).
+  Listen for `sofa3d:none` on document if you want to show the normal gallery instead.
+{%- endcomment -%}
+{%- assign APP_URL = 'https://YOUR-APP.up.railway.app' -%}
+{%- if product -%}
+  <div class="sofa3d-viewer"
+       data-sofa3d-handle="{{ product.handle }}"
+       data-variant="{{ product.selected_or_first_available_variant.id }}"
+       data-aspect="{{ aspect | default: '4/3' }}"
+       data-title="{{ product.title | escape }} – 3D view"></div>
+  <script src="{{ APP_URL }}/embed.js" defer></script>
+{%- endif -%}
