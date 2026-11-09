@@ -59,4 +59,6 @@ SHOPIFY_CLIENT_SECRET=...
 # or, for an older custom app:  SHOPIFY_ADMIN_TOKEN=shpat_xxx
 # optional: SHOPIFY_STORE_DOMAIN=yourstore.com  SHOPIFY_API_VERSION=2026-01  SYNC_INTERVAL_MIN=60
 ```
+If the app lives in a different organization from the store (e.g. an agency's Dev Dashboard), the client-credentials grant fails with `shop_not_permitted`. Use **Connect store** on the sync page instead: add `https://YOUR-APP/api/shopify/callback` as an allowed redirect URL in the app's settings, release that version, then a store owner clicks **Connect store** and approves read-only access. A permanent offline token is saved on the server (never sent to the browser); **Disconnect** removes it.
+
 Options a Shopify product doesn't have (e.g. one product per fabric and size) are fixed from its tags: a value is chosen when every part of its name is a tag value, so `96" - Natural` matches `size:96"` + `construction:Natural`.

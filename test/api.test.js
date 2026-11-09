@@ -267,3 +267,52 @@ test('sync with Admin API: client-credentials token, search query, paginated var
     assert.equal(tokenCalls, 1, 'token cached');
   } finally { srv.close(); admin.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('Connect store: authorization-code install saves an offline token', async () => {
+  const crypto = await import('node:crypto');
+  const shopSrv = http.createServer(async (req, res) => {
+    let body = ''; for await (const ch of req) body += ch;
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/admin/oauth/access_token') {
+      if (body.startsWith('grant_type=')) { res.statusCode = 400; return res.end('{"error":"shop_not_permitted"}'); } // client credentials, cross-org
+      const b = JSON.parse(body);
+      if (b.code !== 'good' || b.client_secret !== 'sec') { res.statusCode = 400; return res.end('{"error":"invalid_request"}'); }
+      return res.end(JSON.stringify({ access_token: 'offline', scope: 'read_products' }));
+    }
+    if (req.headers['x-shopify-access-token'] !== 'offline') { res.statusCode = 401; return res.end('{}'); }
+    res.end(JSON.stringify({ data: { shop: { name: 'Mock' } } }));
+  }).listen(0);
+  const shopUrl = `http://127.0.0.1:${shopSrv.address().port}`;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sofa3d-oauth-'));
+  const { app } = createApp({ DATA_DIR: dir, ADMIN_PASSWORD: 'secret', SHOPIFY_SHOP: shopUrl, SHOPIFY_CLIENT_ID: 'id', SHOPIFY_CLIENT_SECRET: 'sec' });
+  const srv = app.listen(0);
+  const b = `http://127.0.0.1:${srv.address().port}`;
+  const sign = (q) => crypto.createHmac('sha256', 'sec').update(Object.keys(q).sort().map((k) => `${k}=${q[k]}`).join('&')).digest('hex');
+  try {
+    const login = await fetch(b + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'secret' }) });
+    const session = login.headers.get('set-cookie').split(';')[0];
+    assert.equal((await fetch(b + '/api/shopify/install', { redirect: 'manual' })).status, 401, 'install needs admin login');
+    const inst = await fetch(b + '/api/shopify/install', { redirect: 'manual', headers: { cookie: session } });
+    const loc = new URL(inst.headers.get('location'));
+    assert.equal(loc.pathname, '/admin/oauth/authorize');
+    assert.equal(loc.searchParams.get('scope'), 'read_products');
+    assert.equal(loc.searchParams.get('redirect_uri'), `${b}/api/shopify/callback`);
+    const state = loc.searchParams.get('state');
+    const cookie = `${session}; ${inst.headers.get('set-cookie').split(';')[0]}`;
+    const cb = (q, ck = cookie) => fetch(`${b}/api/shopify/callback?${new URLSearchParams(q)}`, { redirect: 'manual', headers: { cookie: ck } });
+    const base = { code: 'good', shop: shopUrl.replace('http://', ''), state, timestamp: '1' };
+    assert.equal((await cb({ ...base, hmac: 'bad' })).status, 400, 'bad signature rejected');
+    assert.equal((await cb({ ...base, state: 'x', hmac: sign({ ...base, state: 'x' }) })).status, 400, 'wrong state rejected');
+    const evil = { ...base, shop: 'evil.myshopify.com' };
+    assert.equal((await cb({ ...evil, hmac: sign(evil) })).status, 400, 'other shop rejected');
+    const ok = await cb({ ...base, hmac: sign(base) });
+    assert.equal(ok.status, 302, await ok.text());
+    assert.equal(ok.headers.get('location'), '/admin/#/shopify');
+    const st = await fetch(b + '/api/shopify/status', { headers: { cookie: session } }).then((r) => r.json());
+    assert.equal(st.mode, 'oauth'); assert.equal(st.connected, true); assert.ok(!JSON.stringify(st).includes('offline'), 'token never sent to the browser');
+    await fetch(b + '/api/shopify/token', { method: 'DELETE', headers: { cookie: session } });
+    const after = await fetch(b + '/api/shopify/status', { headers: { cookie: session } }).then((r) => r.json());
+    assert.equal(after.mode, 'client'); assert.equal(after.connected, false);
+    assert.match(after.error, /shop_not_permitted/, "Shopify's reason is shown");
+  } finally { srv.close(); shopSrv.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});

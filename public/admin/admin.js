@@ -111,14 +111,19 @@ async function renderSync() {
       toast(dryRun ? 'Preview ready – nothing was changed' : 'Sync finished');
     } catch (e) { $res.replaceChildren(); toast(e.message, true); }
   };
+  const how = { client: 'client credentials', oauth: 'Connect store', token: 'Admin token' }[st.mode];
   const conn = st.connected
-    ? h('span', { class: 'pill' }, `Connected to ${st.shopName} (${st.mode === 'client' ? 'client credentials' : 'Admin token'}) – read-only`)
+    ? h('span', { class: 'pill' }, `Connected to ${st.shopName} (${how}) – read-only`)
     : st.mode ? h('span', { class: 'pill warn' }, `Admin API error: ${st.error}`)
       : h('span', { class: 'pill warn' }, 'Admin API not connected – using public product pages (published products only)');
   $app.replaceChildren(
     h('div', { class: 'list-head' }, h('h2', {}, 'Shopify sync'), h('a', { href: '#/' }, '← Products')),
     h('div', { class: 'card' },
       h('h3', {}, 'Connection'), h('p', { class: 'sub' }, conn),
+      st.canInstall && st.mode !== 'token' ? h('div', { class: 'row', style: 'margin-bottom:8px' },
+        h('button', { class: st.connected ? '' : 'primary', onclick: () => (location.href = '/api/shopify/install') }, st.installedAt ? 'Reconnect store' : 'Connect store'),
+        st.installedAt ? h('button', { class: 'link', onclick: async () => { await api('DELETE', '/api/shopify/token'); renderSync(); } }, 'Disconnect') : null,
+        h('span', { class: 'help' }, 'Opens Shopify to approve read-only product access (store owner or staff with app permissions).')) : null,
       h('p', { class: 'help' }, 'Sync only reads from Shopify. It creates or updates products in this app; it never edits your store or theme.'),
       !st.connected ? h('details', {}, h('summary', { class: 'help' }, 'How to connect the store'),
         h('ol', { class: 'help' },

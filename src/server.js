@@ -6,7 +6,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb, newId, emptyConfig } from './db.js';
-import { fetchShopifyProduct, normalizeShopifyProduct, mergeShopifyIntoConfig, norm, adminMode, adminGraphql, searchAdminHandles } from './shopify.js';
+import { fetchShopifyProduct, normalizeShopifyProduct, mergeShopifyIntoConfig, norm, adminMode, adminGraphql, searchAdminHandles,
+  authorizeUrl, validCallbackHmac, sameShop, exchangeCode } from './shopify.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -206,7 +207,7 @@ export function createApp(env = process.env) {
         const raw = typeof req.body.productJson === 'string' ? JSON.parse(req.body.productJson) : req.body.productJson;
         sp = normalizeShopifyProduct(raw);
       } else {
-        sp = await fetchShopifyProduct(req.body?.shopDomain || p.config.shopify?.shopDomain, req.body?.handle || p.config.shopify?.handle, env);
+        sp = await fetchShopifyProduct(req.body?.shopDomain || p.config.shopify?.shopDomain, req.body?.handle || p.config.shopify?.handle, shopEnv());
       }
     } catch (e) {
       return res.status(400).json({ error: e.message });
@@ -242,15 +243,15 @@ export function createApp(env = process.env) {
     const template = s.templateId && getProduct(s.templateId);
     let handles = String(s.handles || '').split(/[\s,]+/).map((x) => x.trim().replace(/^.*\/products\//, '').replace(/[?#].*$/, '')).filter(Boolean);
     if (s.query) {
-      if (!adminMode(env)) throw new Error('A search query needs the Shopify Admin API – set SHOPIFY_SHOP and a token on the server, or list handles instead');
-      handles = [...new Set([...handles, ...await searchAdminHandles(env, s.query)])];
+      if (!adminMode(shopEnv())) throw new Error('A search query needs the Shopify Admin API – set SHOPIFY_SHOP and a token on the server, or list handles instead');
+      handles = [...new Set([...handles, ...await searchAdminHandles(shopEnv(), s.query)])];
     }
     if (!handles.length) throw new Error('Nothing to sync – enter a search query or product handles');
     const results = [];
     for (const handle of handles) {
       const r = { handle };
       try {
-        const sp = await fetchShopifyProduct(s.shopDomain || env.SHOPIFY_SHOP, handle, env);
+        const sp = await fetchShopifyProduct(s.shopDomain || env.SHOPIFY_SHOP, handle, shopEnv());
         const row = db.prepare('SELECT id FROM products WHERE shopify_handle = ?').get(norm(sp.handle || handle));
         let p = row && getProduct(row.id);
         r.title = sp.title; r.status = sp.status; r.variants = sp.variants.length;
@@ -280,11 +281,48 @@ export function createApp(env = process.env) {
     return results;
   }
 
+  // Token saved by the "Connect store" install; env vars always win.
+  const storedToken = () => { const r = db.prepare("SELECT value FROM settings WHERE key = 'shopify_token'").get(); return r ? JSON.parse(r.value) : null; };
+  const shopEnv = () => {
+    const t = storedToken();
+    return t && sameShop(t.shop, env.SHOPIFY_SHOP) ? { ...env, SHOPIFY_OAUTH_TOKEN: t.token } : env;
+  };
+
+  app.get('/api/shopify/install', requireAuth, (req, res) => {
+    if (!(env.SHOPIFY_SHOP && env.SHOPIFY_CLIENT_ID && env.SHOPIFY_CLIENT_SECRET)) return res.status(400).send('Set SHOPIFY_SHOP, SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET on the server first.');
+    const state = crypto.randomBytes(16).toString('hex');
+    res.cookie('sofa3d_oauth', state, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 10 * 60 * 1000 });
+    res.redirect(authorizeUrl(env, { redirectUri: `${env.APP_URL || `${req.protocol}://${req.get('host')}`}/api/shopify/callback`, state }));
+  });
+
+  app.get('/api/shopify/callback', requireAuth, wrap(async (req, res) => {
+    const q = req.query;
+    const fail = (msg) => res.status(400).type('html').send(`<p style="font-family:sans-serif">Could not connect Shopify: ${msg.replace(/[<>&]/g, '')}. <a href="/admin/#/shopify">Back</a></p>`);
+    const state = req.cookies.sofa3d_oauth;
+    res.clearCookie('sofa3d_oauth');
+    if (!state || q.state !== state) return fail('the sign-in expired or did not start here – try Connect store again');
+    if (!validCallbackHmac(q, env.SHOPIFY_CLIENT_SECRET)) return fail('Shopify signature check failed');
+    if (!sameShop(q.shop, env.SHOPIFY_SHOP)) return fail(`this server is set up for ${env.SHOPIFY_SHOP}, not ${q.shop}`);
+    if (!q.code) return fail('no authorization code');
+    let t;
+    try { t = await exchangeCode(env, String(q.code)); } catch (e) { return fail(e.message); }
+    db.prepare("INSERT INTO settings (key, value) VALUES ('shopify_token', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(JSON.stringify({ token: t.token, scope: t.scope, shop: env.SHOPIFY_SHOP, at: new Date().toISOString() }));
+    res.redirect('/admin/#/shopify');
+  }));
+
+  app.delete('/api/shopify/token', requireAuth, (req, res) => {
+    db.prepare("DELETE FROM settings WHERE key = 'shopify_token'").run();
+    res.json({ ok: true });
+  });
+
   app.get('/api/shopify/status', requireAuth, wrap(async (req, res) => {
-    const mode = adminMode(env);
-    const out = { mode, shop: env.SHOPIFY_SHOP || null, settings: getSettings() };
+    const senv = shopEnv();
+    const mode = adminMode(senv);
+    const out = { mode, shop: env.SHOPIFY_SHOP || null, settings: getSettings(),
+      canInstall: !!(env.SHOPIFY_SHOP && env.SHOPIFY_CLIENT_ID && env.SHOPIFY_CLIENT_SECRET), installedAt: storedToken()?.at || null };
     if (mode) {
-      try { out.shopName = (await adminGraphql(env, '{ shop { name } }')).shop.name; out.connected = true; }
+      try { out.shopName = (await adminGraphql(senv, '{ shop { name } }')).shop.name; out.connected = true; }
       catch (e) { out.connected = false; out.error = e.message; }
     }
     res.json(out);

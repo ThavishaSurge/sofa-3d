@@ -1,7 +1,9 @@
 // Import product variants from Shopify.
-// 1) If the Admin API is configured (SHOPIFY_SHOP + SHOPIFY_ADMIN_TOKEN, or SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET)
+// 1) If the Admin API is configured (SHOPIFY_SHOP + SHOPIFY_ADMIN_TOKEN, a token saved by the "Connect store" install,
+//    or SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET for the client-credentials grant)
 //    and the shop matches -> Admin GraphQL API (works for drafts, reads every variant, read_products scope only)
 // 2) Otherwise the public storefront endpoint https://{shop}/products/{handle}.js (no token needed)
+import crypto from 'node:crypto';
 import { newId } from './db.js';
 
 export const norm = (s) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -35,6 +37,7 @@ const tokenCache = new Map();
 export function adminMode(env = process.env) {
   if (!env.SHOPIFY_SHOP) return null;
   if (env.SHOPIFY_ADMIN_TOKEN) return 'token';
+  if (env.SHOPIFY_OAUTH_TOKEN) return 'oauth';
   if (env.SHOPIFY_CLIENT_ID && env.SHOPIFY_CLIENT_SECRET) return 'client';
   return null;
 }
@@ -42,6 +45,7 @@ export function adminMode(env = process.env) {
 // Static Admin token, or a short-lived one from the client-credentials grant (Dev Dashboard apps).
 async function adminToken(env) {
   if (env.SHOPIFY_ADMIN_TOKEN) return env.SHOPIFY_ADMIN_TOKEN;
+  if (env.SHOPIFY_OAUTH_TOKEN) return env.SHOPIFY_OAUTH_TOKEN;
   const key = env.SHOPIFY_SHOP + '|' + env.SHOPIFY_CLIENT_ID;
   const hit = tokenCache.get(key);
   if (hit && hit.exp > Date.now()) return hit.token;
@@ -67,6 +71,7 @@ export async function adminGraphql(env, query, variables = {}) {
     headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': await adminToken(env) },
     body: JSON.stringify({ query, variables }),
   });
+  if (res.status === 401) throw new Error('Shopify rejected the access token (401) – reconnect the store');
   if (!res.ok) throw new Error(`Shopify Admin API error ${res.status}`);
   const json = await res.json();
   if (json.errors?.length) throw new Error('Shopify Admin API: ' + json.errors.map((e) => e.message).join('; '));
@@ -97,6 +102,37 @@ async function fetchAdmin(env, handle) {
       options: v.selectedOptions.map((s) => s.value),
     })),
   };
+}
+
+// ---------- authorization-code install ("Connect store") ----------
+// Works when the app and the store are in different organizations, and yields a permanent offline token.
+export const OAUTH_SCOPES = 'read_products';
+
+export function authorizeUrl(env, { redirectUri, state }) {
+  const q = new URLSearchParams({ client_id: env.SHOPIFY_CLIENT_ID, scope: OAUTH_SCOPES, redirect_uri: redirectUri, state });
+  return `${shopBase(env.SHOPIFY_SHOP)}/admin/oauth/authorize?${q}`;
+}
+
+/** Shopify signs the callback query with the app secret (hex HMAC-SHA256 of the sorted params, minus hmac/signature). */
+export function validCallbackHmac(query, secret) {
+  const given = String(query.hmac || '');
+  const msg = Object.keys(query).filter((k) => k !== 'hmac' && k !== 'signature').sort()
+    .map((k) => `${k}=${Array.isArray(query[k]) ? query[k].join(',') : query[k]}`).join('&');
+  const want = crypto.createHmac('sha256', secret).update(msg).digest('hex');
+  return given.length === want.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(want));
+}
+
+export const sameShop = (a, b) => !!a && shopHost(a) === shopHost(b);
+
+export async function exchangeCode(env, code) {
+  const res = await fetch(`${shopBase(env.SHOPIFY_SHOP)}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ client_id: env.SHOPIFY_CLIENT_ID, client_secret: env.SHOPIFY_CLIENT_SECRET, code }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.access_token) throw new Error(`Shopify code exchange failed (HTTP ${res.status})${json.error ? ' – ' + json.error : ''}`);
+  return { token: json.access_token, scope: json.scope || '' };
 }
 
 /** Handles of every product matching a Shopify search query, e.g. tag:"group:the-elevate-sofa". */
