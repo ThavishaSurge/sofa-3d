@@ -80,6 +80,18 @@ export function createApp(env = process.env) {
   app.post('/api/logout', (req, res) => { res.clearCookie('sofa3d_session'); res.json({ ok: true }); });
   app.get('/api/me', (req, res) => res.json({ loggedIn: validSession(req.cookies.sofa3d_session) }));
 
+  // Read-only storage report – where data lives and what's in it (for diagnosing missing products)
+  app.get('/api/storage', requireAuth, (req, res) => {
+    const size = (f) => { try { return fs.statSync(f).size; } catch { return null; } };
+    const dirs = fs.existsSync(UPLOAD_DIR) ? fs.readdirSync(UPLOAD_DIR).filter((d) => d !== 'tmp') : [];
+    const ids = new Set(db.prepare('SELECT id FROM products').all().map((r) => r.id));
+    res.json({
+      dataDir: DATA_DIR, files: fs.readdirSync(DATA_DIR),
+      db: { size: size(path.join(DATA_DIR, 'sofa3d.db')), wal: size(path.join(DATA_DIR, 'sofa3d.db-wal')), products: ids.size, assets: db.prepare('SELECT COUNT(*) n FROM assets').get().n },
+      uploadDirs: dirs.map((d) => ({ dir: d, files: fs.readdirSync(path.join(UPLOAD_DIR, d)).length, inDb: ids.has(d) })),
+    });
+  });
+
   // ---------- admin API ----------
   app.get('/api/products', requireAuth, (req, res) => {
     const rows = db.prepare('SELECT id, name, shopify_handle, config, updated_at FROM products ORDER BY updated_at DESC').all();
