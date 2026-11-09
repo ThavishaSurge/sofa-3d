@@ -50,8 +50,13 @@ async function adminToken(env) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ grant_type: 'client_credentials', client_id: env.SHOPIFY_CLIENT_ID, client_secret: env.SHOPIFY_CLIENT_SECRET }),
   });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok || !json.access_token) throw new Error(`Shopify token request failed (HTTP ${res.status})`);
+  const text = await res.text();
+  let json = {}; try { json = JSON.parse(text); } catch {}
+  if (!res.ok || !json.access_token) {
+    // Shopify's reason, e.g. shop_not_permitted / invalid_client – never includes our secret
+    const why = [json.error, json.error_description, json.errors].flat().filter(Boolean).map(String).join(': ') || text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+    throw new Error(`Shopify token request failed (HTTP ${res.status})${why ? ' – ' + why : ''}`);
+  }
   tokenCache.set(key, { token: json.access_token, exp: Date.now() + ((json.expires_in || 3600) - 120) * 1000 });
   return json.access_token;
 }
