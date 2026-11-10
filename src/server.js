@@ -235,6 +235,38 @@ export function createApp(env = process.env) {
     res.json({ config, imported: { title: sp.title, options: sp.options, variants: sp.variants.length } });
   }));
 
+  // Put Shopify variant IDs on rows made by "Generate all combinations" (or typed by hand):
+  // a row gets the ID of the Shopify variant whose option values – plus the fields fixed from tags – match it.
+  app.post('/api/products/:id/fill-variant-ids', requireAuth, wrap(async (req, res) => {
+    const p = getProduct(req.params.id);
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    if (!p.config.shopify?.handle) return res.status(400).json({ error: 'Set the Shopify product handle first' });
+    const senv = shopEnv();
+    let sp;
+    try { sp = await fetchShopifyProduct(adminMode(senv) ? env.SHOPIFY_SHOP : p.config.shopify.shopDomain, p.config.shopify.handle, senv); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+    const cfg = p.config;
+    // match against the product's own options only, so Shopify values the app doesn't know yet can't create new ones
+    const shaped = mergeShopifyIntoConfig({ ...cfg, variants: [] }, sp);
+    const key = (sel) => cfg.options.map((o) => sel?.[o.id] || '').join('|');
+    const byKey = new Map(shaped.variants.filter((v) => cfg.options.every((o) => v.selections[o.id])).map((v) => [key(v.selections), v]));
+    const used = new Set(cfg.variants.map((v) => v.id).filter(Boolean));
+    let filled = 0;
+    for (const row of cfg.variants) {
+      if (row.id) continue;
+      const sv = byKey.get(key(row.selections));
+      if (!sv || used.has(sv.id)) continue;
+      row.id = sv.id; row.title = sv.title; row.options = sv.options; used.add(sv.id); filled++;
+    }
+    const before = cfg.variants.length;
+    if (req.body?.prune) cfg.variants = cfg.variants.filter((v) => v.id);
+    cfg.shopify = { ...cfg.shopify, fixed: shaped.shopify.fixed };
+    saveProduct(p.id, p.name, cfg);
+    const inShopify = sp.variants.length;
+    res.json({ config: cfg, filled, removed: before - cfg.variants.length, stillMissing: cfg.variants.filter((v) => !v.id).length,
+      shopifyNotInTable: sp.variants.filter((v) => !cfg.variants.some((r) => r.id === String(v.id))).length, inShopify });
+  }));
+
   // ---------- Shopify sync ----------
   // Creates a 3D product (copied from a fully set-up template) for every matching Shopify product,
   // or refreshes the variants of one that already exists. Read-only towards Shopify.

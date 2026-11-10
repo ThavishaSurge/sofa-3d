@@ -316,3 +316,24 @@ test('Connect store: authorization-code install saves an offline token', async (
     assert.match(after.error, /shop_not_permitted/, "Shopify's reason is shown");
   } finally { srv.close(); shopSrv.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('fill variant IDs onto generated combination rows, and prune rows not sold', async () => {
+  const tid = await makeTemplate();
+  const p = (await call('GET', `/api/products/${tid}`)).json;
+  const c = p.config;
+  // rows as "Generate all combinations" makes them: every fabric × size × colour, no IDs
+  c.options.find((o) => o.id === 'col').values.push({ id: 'ash', name: 'Ash', aliases: [], effects: [] });
+  c.variants = [];
+  for (const f of ['hemp', 'vel']) for (const z of ['s86', 's96n']) for (const k of ['moss', 'ash']) c.variants.push({ id: '', title: `${f}/${z}/${k}`, options: [], selections: { fab: f, sz: z, col: k }, manual: true });
+  c.shopify = { shopDomain: shopBase, handle: 'velvet-fill' };
+  assert.equal((await call('PUT', `/api/products/${tid}`, { name: p.name, config: c })).status, 200);
+  const r = await call('POST', `/api/products/${tid}/fill-variant-ids`, {});
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.equal(r.json.filled, 2, 'Velvet · 96" Natural · Moss/Ash exist in Shopify');
+  assert.equal(r.json.stillMissing, 6);
+  const row = r.json.config.variants.find((v) => v.selections.fab === 'vel' && v.selections.sz === 's96n' && v.selections.col === 'ash');
+  assert.equal(row.id, '901'); assert.equal(row.title, 'Ash');
+  const pr = await call('POST', `/api/products/${tid}/fill-variant-ids`, { prune: true });
+  assert.equal(pr.json.removed, 6);
+  assert.deepEqual(pr.json.config.variants.map((v) => v.id).sort(), ['900', '901']);
+});

@@ -483,7 +483,21 @@ function tabVariants() {
     };
     rec(0, {});
     markDirty(); renderTab();
-    toast(added ? `Added ${added} combination(s) – paste a Shopify variant ID into each row` : 'All combinations already exist');
+    if (!added) return toast('All combinations already exist');
+    if (c.shopify?.handle) fillIds(false, added);
+    else toast(`Added ${added} combination(s) – set the Shopify handle above, then "Fill IDs from Shopify"`);
+  };
+  const fillIds = async (prune, added) => {
+    try {
+      if (S.dirty) await save();
+      const r = await api('POST', `/api/products/${S.product.id}/fill-variant-ids`, { prune });
+      S.product.config = r.config; S.dirty = false;
+      const parts = [added ? `Added ${added} combination(s)` : null, `${r.filled} variant ID(s) filled from Shopify`,
+        prune ? `${r.removed} row(s) not in Shopify removed` : r.stillMissing ? `${r.stillMissing} row(s) don't exist in Shopify` : null,
+        r.shopifyNotInTable ? `${r.shopifyNotInTable} Shopify variant(s) have no row – use Import variants` : null].filter(Boolean);
+      toast(parts.join(' · '));
+      reloadPreview(); renderTab();
+    } catch (e) { toast(e.message, true); }
   };
   const preview = (v) => { if (!v.id || S.dirty) { $preview.contentWindow.postMessage({ type: 'sofa3d:setOptions', options: Object.fromEntries(Object.entries(v.selections || {})) }, '*'); return; } $preview.contentWindow.postMessage({ type: 'sofa3d:setVariant', variantId: v.id }, '*'); S.activeVariant = v.id; document.querySelectorAll('.vt tr').forEach((tr) => tr.classList.toggle('active', tr.dataset.id === v.id)); };
   const newIdInput = h('input', { placeholder: 'Variant ID', class: 'mono', style: 'width:180px' });
@@ -506,8 +520,10 @@ function tabVariants() {
         h('span', { class: 'pill warn', id: 'missing-ids', style: missingIds ? '' : 'display:none' }, `${missingIds} row(s) missing a variant ID`),
         ' Click a row to preview it.'),
       h('div', { class: 'row', style: 'margin-bottom:10px' },
-        h('button', { onclick: generate, title: 'One row per combination of option values – then paste each Shopify variant ID' }, '⊞ Generate all combinations'),
-        h('span', { class: 'help' }, 'Variant IDs are in Shopify admin → Products → product → click a variant → the number at the end of the URL.')),
+        h('button', { onclick: generate, title: 'One row per combination of option values; IDs are filled from Shopify when the handle is set' }, '⊞ Generate all combinations'),
+        h('button', { onclick: () => fillIds(false), disabled: !c.shopify?.handle, title: 'Look up each row in the Shopify product and fill its variant ID' }, '⇣ Fill IDs from Shopify'),
+        missingIds ? h('button', { onclick: () => fillIds(true), disabled: !c.shopify?.handle, title: 'Fill IDs, then delete rows whose combination is not sold in Shopify' }, 'Remove rows not in Shopify') : null,
+        h('span', { class: 'help' }, 'Or find an ID in Shopify admin → Products → product → click a variant → the number at the end of the URL.')),
       c.variants.length ? h('div', { class: 'vt' }, h('table', {},
         h('thead', {}, h('tr', {}, h('th', {}, 'Variant ID'), h('th', {}, 'Shopify title'), c.options.map((o) => h('th', {}, o.name)), h('th', {}))),
         h('tbody', {}, c.variants.map((v) => h('tr', { 'data-id': v.id, class: S.activeVariant === v.id ? 'active' : '', onclick: (e) => { if (e.target.tagName !== 'SELECT' && e.target.tagName !== 'BUTTON') preview(v); } },
