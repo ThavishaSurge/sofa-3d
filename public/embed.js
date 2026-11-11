@@ -160,6 +160,10 @@
     }
     function set(v) {
       on = v;
+      // the main slider's dots/progress bar describe the photos, not the 3D view
+      [].forEach.call(box.querySelectorAll('.slick-dots'), function (d) {
+        if (!(thumbsSel && d.closest(thumbsSel))) d.style.visibility = on ? 'hidden' : '';
+      });
       stage.style.display = on ? '' : 'none';
       box.classList.toggle('sofa3d-on', on);
       btn.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -169,7 +173,11 @@
       var t = thumbs(), br = box.getBoundingClientRect();
       // cover the main slider's visible width (on phones it runs edge to edge, wider than the box)
       var list = box.querySelector('.slick-list'), lr = list && list.offsetWidth ? list.getBoundingClientRect() : br;
-      var left = Math.max(lr.left, 0), right = Math.min(lr.right, document.documentElement.clientWidth);
+      var vw = document.documentElement.clientWidth;
+      var left = Math.max(lr.left, 0), right = Math.min(lr.right, vw);
+      // phones (no thumbnail bar): the theme peeks the neighbouring photos past the box on some
+      // browsers (seen on iOS), so cover the full screen width there
+      if (!t) { left = 0; right = vw; }
       stage.style.left = (left - br.left) + 'px';
       stage.style.width = Math.max(0, right - left) + 'px';
       if (t) {
