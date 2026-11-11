@@ -153,10 +153,19 @@
     btn.className = 'sofa3d-thumb';
     box.appendChild(btn);
 
-    var on = true;
+    var on = true, started = Date.now();
     function thumbs() {
       var t = thumbsSel && box.querySelector(thumbsSel);
       return t && t.offsetHeight > 0 && t.querySelector('img') ? t : null;
+    }
+    // the bar is meant to show (not hidden by the theme, as on phones) but its slider or images
+    // haven't finished setting up yet – measuring now would size the 3D view wrongly
+    function pending() {
+      var t = thumbsSel && box.querySelector(thumbsSel);
+      if (!t || getComputedStyle(t).display === 'none' || Date.now() - started > 10000) return false;
+      var img = t.querySelector('img');
+      var slick = window.jQuery && window.jQuery.fn && window.jQuery.fn.slick;
+      return !(img && img.getBoundingClientRect().height > 0 && (!slick || t.classList.contains('slick-initialized')));
     }
     function set(v) {
       on = v;
@@ -170,6 +179,9 @@
       layout();
     }
     function layout() {
+      var wait = pending();
+      stage.style.visibility = btn.style.visibility = wait ? 'hidden' : '';
+      if (wait) return;
       var t = thumbs(), br = box.getBoundingClientRect();
       // cover the main slider's visible width (on phones it runs edge to edge, wider than the box)
       var list = box.querySelector('.slick-list'), lr = list && list.offsetWidth ? list.getBoundingClientRect() : br;
@@ -215,6 +227,7 @@
     if (window.ResizeObserver) new ResizeObserver(layout).observe(box);
     window.addEventListener('resize', layout);
     setInterval(layout, 1000); // the theme rebuilds the thumbnails on variant change
+    var fast = setInterval(function () { layout(); if (!pending()) clearInterval(fast); }, 100); // settle quickly while the gallery sets up
     set(true);
   }
 
