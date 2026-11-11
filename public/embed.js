@@ -7,6 +7,10 @@
  *
  * Optional attributes: data-aspect="4/3" (or data-height="520px"), data-ui="1", data-bg="ffffff",
  *   data-autorotate="1", data-form="#product-form-id" (CSS selector of the product form)
+ * Gallery mode – show the 3D view in the product gallery's main image area, with a "3D" tile
+ *   left of the thumbnail bar (3D is active on load; clicking a photo thumbnail shows photos):
+ *   data-gallery=".product-main-image"  (the gallery box)
+ *   data-gallery-thumbs=".js-product-images-nav"  (the thumbnail bar inside it)
  * JS API: window.Sofa3D.setVariant(id), window.Sofa3D.setOptions({Fabric:'Linen'})
  */
 (function () {
@@ -105,7 +109,98 @@
 
     var inst = { el: el, iframe: iframe, productId: productId, ready: false, queue: null, lastVariant: variant, lastSig: null };
     instances.push(inst);
+    if (el.getAttribute('data-gallery')) galleryMode(el, wrap);
     return inst;
+  }
+
+  // ---------- gallery mode ----------
+  var CUBE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M12 2.8 20 7v10l-8 4.2L4 17V7z"/><path d="M4 7l8 4.2L20 7M12 11.2V21.2"/></svg>';
+  function injectCss() {
+    if (document.getElementById('sofa3d-css')) return;
+    var st = document.createElement('style');
+    st.id = 'sofa3d-css';
+    st.textContent =
+      '.sofa3d-stage{position:absolute;left:0;top:0;width:100%;z-index:5}' +
+      '.sofa3d-thumb{position:absolute;z-index:6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;' +
+      'margin:0;padding:0;box-sizing:border-box;background:#fff;border:1px solid #d6d6d6;color:#222;cursor:pointer;' +
+      'font:600 12px/1 system-ui,-apple-system,sans-serif;letter-spacing:.04em}' +
+      '.sofa3d-thumb svg{width:38%;height:38%}' +
+      '.sofa3d-thumb[aria-pressed="true"]{border-color:#222;box-shadow:inset 0 0 0 1px #222}' +
+      '.sofa3d-thumb:focus-visible{outline:2px solid #222;outline-offset:2px}' +
+      '.sofa3d-thumb.is-pill{flex-direction:row;gap:6px;padding:8px 12px;border-radius:999px;box-shadow:0 1px 4px rgba(0,0,0,.15)}' +
+      '.sofa3d-thumb.is-pill svg{width:16px;height:16px}';
+    document.head.appendChild(st);
+  }
+
+  function galleryMode(el, wrap) {
+    var box = document.querySelector(el.getAttribute('data-gallery'));
+    if (!box) return;
+    injectCss();
+    var thumbsSel = el.getAttribute('data-gallery-thumbs');
+    if (getComputedStyle(box).position === 'static') box.style.position = 'relative';
+
+    var stage = document.createElement('div');
+    stage.className = 'sofa3d-stage';
+    stage.style.background = '#' + (el.getAttribute('data-bg') || 'ffffff').replace(/^#/, ''); // hides the photo underneath
+    wrap.style.cssText = 'position:absolute;inset:0;';
+    stage.appendChild(wrap);
+    box.appendChild(stage);
+    el.style.display = 'none';
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sofa3d-thumb';
+    box.appendChild(btn);
+
+    var on = true, shifted = null;
+    function thumbs() {
+      var t = thumbsSel && box.querySelector(thumbsSel);
+      return t && t.offsetHeight > 0 && t.querySelector('img') ? t : null;
+    }
+    function set(v) {
+      on = v;
+      stage.style.display = on ? '' : 'none';
+      box.classList.toggle('sofa3d-on', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      layout();
+    }
+    function layout() {
+      var t = thumbs(), br = box.getBoundingClientRect();
+      if (t) {
+        var img = t.querySelector('.slick-slide img, img');
+        var size = Math.round((img && img.getBoundingClientRect().height) || 64);
+        var gap = 10;
+        if (shifted !== t) { // make room for the 3D tile on the left of the bar
+          t.style.marginLeft = (size + gap) + 'px';
+          shifted = t;
+          window.dispatchEvent(new Event('resize')); // let the slider re-measure
+        }
+        var tr = t.getBoundingClientRect();
+        stage.style.height = Math.max(0, tr.top - br.top - gap) + 'px';
+        btn.className = 'sofa3d-thumb';
+        btn.innerHTML = CUBE + '<span>3D</span>';
+        btn.setAttribute('aria-label', 'View in 3D');
+        btn.style.cssText = 'width:' + size + 'px;height:' + size + 'px;left:' + (tr.left - br.left - size - gap) + 'px;top:' +
+          (tr.top - br.top + (tr.height - size) / 2) + 'px;';
+      } else { // no visible thumbnail bar (e.g. mobile): a floating toggle on the image
+        stage.style.height = box.clientHeight + 'px';
+        btn.className = 'sofa3d-thumb is-pill';
+        btn.innerHTML = on ? '<span>Photos</span>' : CUBE + '<span>View in 3D</span>';
+        btn.setAttribute('aria-label', on ? 'Show photos' : 'View in 3D');
+        btn.style.cssText = 'left:12px;bottom:12px;';
+      }
+    }
+    btn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); set(thumbs() ? true : !on); });
+    // any click on a photo thumbnail or a gallery arrow switches to photos
+    box.addEventListener('click', function (e) {
+      if (!on || btn.contains(e.target) || stage.contains(e.target)) return;
+      if (e.target.closest && e.target.closest((thumbsSel ? thumbsSel + ',' : '') + '.slick-arrow')) set(false);
+    }, true);
+    if (window.ResizeObserver) new ResizeObserver(layout).observe(box);
+    window.addEventListener('resize', layout);
+    setInterval(layout, 1000); // the theme rebuilds the thumbnails on variant change
+    set(true);
   }
 
   function init(el) {
