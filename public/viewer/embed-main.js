@@ -58,6 +58,8 @@ window.addEventListener('message', (e) => {
   else if (d.type === 'sofa3d:getMeta') post({ type: 'sofa3d:meta', meta: viewer.meta() });
 });
 
+document.getElementById('btn-zoom-in').onclick = () => viewer.zoom(0.75);
+document.getElementById('btn-zoom-out').onclick = () => viewer.zoom(1 / 0.75);
 document.getElementById('btn-reset').onclick = () => viewer.resetCamera();
 document.getElementById('btn-full').onclick = () => {
   if (document.fullscreenElement) document.exitFullscreen();

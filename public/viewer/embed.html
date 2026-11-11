@@ -14,7 +14,7 @@
 <style>
   html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
     font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-  #stage { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+  #stage { position: absolute; inset: 0; touch-action: pan-y; cursor: grab; }
   #stage:active { cursor: grabbing; }
   #status { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
     font-size: 13px; color: #555; background: rgba(255,255,255,.85); padding: 8px 14px;
@@ -47,6 +47,8 @@
 <div id="stage"></div>
 <div id="status"><span class="spin"></span><span id="status-text">Loading 3D model…</span></div>
 <div class="tools">
+  <button id="btn-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+  <button id="btn-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
   <button id="btn-reset" title="Reset view" aria-label="Reset view">⟲</button>
   <button id="btn-full" title="Full screen" aria-label="Full screen">⤢</button>
 </div>

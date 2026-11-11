@@ -105,6 +105,8 @@ export class SofaViewer {
     r.toneMappingExposure = this.config.viewer?.exposure ?? 1;
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
+    // the light never moves with the camera, so the shadow is redrawn only when the scene changes
+    r.shadowMap.autoUpdate = false;
     this.container.appendChild(r.domElement);
 
     this.scene = new THREE.Scene();
@@ -123,7 +125,16 @@ export class SofaViewer {
     this.controls.autoRotateSpeed = 0.8;
     // vertical swipes scroll the page on touch screens since they no longer tilt the model
     r.domElement.style.touchAction = 'pan-y';
-    this.controls.addEventListener('start', () => { this.controls.autoRotate = false; this.userMoved = true; });
+    this.controls.addEventListener('start', () => { this.controls.autoRotate = false; this.userMoved = true; this.zoomGoal = null; });
+    // wheel/trackpad zoom eases toward a goal distance instead of OrbitControls' fixed steps;
+    // capture on the container so it runs before the controls' own wheel listener
+    this.container.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+      // ctrlKey = trackpad pinch, which sends small deltas
+      this.zoom(Math.exp(Math.max(-1, Math.min(1, px * (e.ctrlKey ? 0.01 : 0.0015)))));
+    }, { capture: true, passive: false });
 
     this.sun = new THREE.DirectionalLight(0xffffff, 1.6);
     this.sun.castShadow = true;
@@ -152,9 +163,24 @@ export class SofaViewer {
     new ResizeObserver(resize).observe(this.container);
     resize();
 
-    r.setAnimationLoop(() => {
-      const moved = this.controls.update();
+    let lastT = performance.now();
+    r.setAnimationLoop((t) => {
+      const dt = Math.min(0.1, (t - lastT) / 1000);
+      lastT = t;
+      let zoomed = false;
+      if (this.zoomGoal != null) {
+        const c = this.controls, offset = this.camera.position.clone().sub(c.target);
+        const d = offset.length(), next = d + (this.zoomGoal - d) * (1 - Math.exp(-dt * 14));
+        if (Math.abs(this.zoomGoal - next) < this.zoomGoal * 0.001) {
+          offset.setLength(this.zoomGoal);
+          this.zoomGoal = null;
+        } else offset.setLength(next);
+        this.camera.position.copy(c.target).add(offset);
+        zoomed = true;
+      }
+      const moved = this.controls.update() || zoomed;
       if (moved || this.dirty) {
+        if (this.dirty) r.shadowMap.needsUpdate = true;
         r.render(this.scene, this.camera);
         this.dirty = false;
         this.frames = (this.frames || 0) + 1;
@@ -242,7 +268,17 @@ export class SofaViewer {
     s.updateProjectionMatrix();
   }
 
+  /** Ease the camera distance by a factor: below 1 zooms in, above 1 zooms out. */
+  zoom(factor) {
+    const c = this.controls;
+    const from = this.zoomGoal ?? this.camera.position.distanceTo(c.target);
+    this.zoomGoal = THREE.MathUtils.clamp(from * factor, c.minDistance, c.maxDistance);
+    c.autoRotate = false;
+    this.userMoved = true;
+  }
+
   resetCamera() {
+    this.zoomGoal = null;
     if (this.root) { this.userMoved = false; this.#frame(this.root); this.dirty = true; return; }
     if (!this.homeView) return;
     this.camera.position.copy(this.homeView.pos);
