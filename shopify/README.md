@@ -62,3 +62,15 @@ SHOPIFY_CLIENT_SECRET=...
 If the app lives in a different organization from the store (e.g. an agency's Dev Dashboard), the client-credentials grant fails with `shop_not_permitted`. Use **Connect store** on the sync page instead: add `https://YOUR-APP/api/shopify/callback` as an allowed redirect URL in the app's settings, release that version, then a store owner clicks **Connect store** and approves read-only access. A permanent offline token is saved on the server (never sent to the browser); **Disconnect** removes it.
 
 Options a Shopify product doesn't have (e.g. one product per fabric and size) are fixed from its tags: a value is chosen when every part of its name is a tag value, so `96" - Natural` matches `size:96"` + `construction:Natural`.
+
+## Gallery mode (3D inside the product gallery)
+Add `data-gallery` and `data-gallery-thumbs` to the snippet to show the 3D view in the gallery's main image area instead of above it. A **3D** tile is added to the left of the thumbnail bar; 3D is active when the page loads, clicking a photo thumbnail (or a gallery arrow) shows the photos, and clicking **3D** switches back. On phones, where the thumbnail bar is hidden, a floating **Photos / View in 3D** button toggles instead. For the Sabai `redesign-v2` templates:
+```liquid
+<div data-sofa3d-handle="{{ product.handle }}"
+     data-variant="{{ product.selected_or_first_available_variant.id }}"
+     data-form="[data-product-form]"
+     data-gallery=".product-main-image"
+     data-gallery-thumbs=".js-product-images-nav"></div>
+<script src="https://sofa3d-3d.up.railway.app/embed.js" defer></script>
+```
+Products without a 3D setup are untouched (no tile, normal gallery).
