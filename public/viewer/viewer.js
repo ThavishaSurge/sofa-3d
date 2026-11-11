@@ -16,6 +16,8 @@ function getLoader() {
 
 export const norm = (s) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 const EFFECT_ORDER = ['model', 'visibility', 'scale', 'texture', 'color'];
+// camera direction from the model's centre; its height also sets the locked viewing angle
+const VIEW_DIR = new THREE.Vector3(0.75, 0.45, 1.25).normalize();
 
 export class SofaViewer {
   constructor(container, config, opts = {}) {
@@ -115,9 +117,12 @@ export class SofaViewer {
     this.controls = new OrbitControls(this.camera, r.domElement);
     this.controls.enableDamping = true;
     this.controls.enablePan = false;
-    this.controls.maxPolarAngle = Math.PI / 2 - 0.04;
+    // turntable only: the camera's height is fixed in #frame, so dragging spins around the vertical axis
+    this.controls.minPolarAngle = this.controls.maxPolarAngle = Math.acos(VIEW_DIR.y);
     this.controls.autoRotate = !!(this.opts.autoRotate ?? this.config.viewer?.autoRotate);
     this.controls.autoRotateSpeed = 0.8;
+    // vertical swipes scroll the page on touch screens since they no longer tilt the model
+    r.domElement.style.touchAction = 'pan-y';
     this.controls.addEventListener('start', () => { this.controls.autoRotate = false; this.userMoved = true; });
 
     this.sun = new THREE.DirectionalLight(0xffffff, 1.6);
@@ -215,8 +220,7 @@ export class SofaViewer {
     const vfov = THREE.MathUtils.degToRad(this.camera.fov);
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect);
     const dist = (radius / Math.sin(Math.min(vfov, hfov) / 2)) * 0.92;
-    const dir = new THREE.Vector3(0.75, 0.45, 1.25).normalize();
-    this.camera.position.copy(center).addScaledVector(dir, dist);
+    this.camera.position.copy(center).addScaledVector(VIEW_DIR, dist);
     this.camera.near = dist / 100;
     this.camera.far = dist * 100;
     this.camera.updateProjectionMatrix();
