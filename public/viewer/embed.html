@@ -27,6 +27,8 @@
   .tools { position: absolute; right: 10px; top: 10px; display: flex; gap: 6px; }
   .tools button { width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(0,0,0,.1);
     background: rgba(255,255,255,.9); cursor: pointer; font-size: 15px; line-height: 1; color: #222; }
+  /* phones: no full screen button (the frame is already screen-wide) */
+  @media (max-width: 767px) { #btn-full { display: none; } }
   .hint { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); font-size: 11px; color: #777;
     background: rgba(255,255,255,.7); padding: 4px 10px; border-radius: 999px; pointer-events: none; white-space: nowrap; transition: opacity .6s; }
   #ui { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 12px 12px; display: none;
