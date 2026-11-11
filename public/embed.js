@@ -153,7 +153,7 @@
     btn.className = 'sofa3d-thumb';
     box.appendChild(btn);
 
-    var on = true, shifted = null;
+    var on = true;
     function thumbs() {
       var t = thumbsSel && box.querySelector(thumbsSel);
       return t && t.offsetHeight > 0 && t.querySelector('img') ? t : null;
@@ -167,21 +167,28 @@
     }
     function layout() {
       var t = thumbs(), br = box.getBoundingClientRect();
+      // cover the main slider's visible width (on phones it runs edge to edge, wider than the box)
+      var list = box.querySelector('.slick-list'), lr = list && list.offsetWidth ? list.getBoundingClientRect() : br;
+      var left = Math.max(lr.left, 0), right = Math.min(lr.right, document.documentElement.clientWidth);
+      stage.style.left = (left - br.left) + 'px';
+      stage.style.width = Math.max(0, right - left) + 'px';
       if (t) {
         var img = t.querySelector('.slick-slide img, img');
         var size = Math.round((img && img.getBoundingClientRect().height) || 64);
-        var gap = 10;
-        if (shifted !== t) { // make room for the 3D tile on the left of the bar
-          t.style.marginLeft = (size + gap) + 'px';
-          shifted = t;
+        var gap = 10, tr = t.getBoundingClientRect();
+        // the bar's "previous" arrow may hang outside it on the left – keep it clear of the 3D tile
+        var prev = t.querySelector('.slick-prev'), over = prev && prev.offsetWidth ? Math.max(0, Math.round(tr.left - prev.getBoundingClientRect().left)) : 0;
+        var want = size + gap + over;
+        if (parseFloat(t.style.marginLeft || 0) !== want) {
+          t.style.marginLeft = want + 'px';
           window.dispatchEvent(new Event('resize')); // let the slider re-measure
+          tr = t.getBoundingClientRect();
         }
-        var tr = t.getBoundingClientRect();
         stage.style.height = Math.max(0, tr.top - br.top - gap) + 'px';
         btn.className = 'sofa3d-thumb';
         btn.innerHTML = CUBE + '<span>3D</span>';
         btn.setAttribute('aria-label', 'View in 3D');
-        btn.style.cssText = 'width:' + size + 'px;height:' + size + 'px;left:' + (tr.left - br.left - size - gap) + 'px;top:' +
+        btn.style.cssText = 'width:' + size + 'px;height:' + size + 'px;left:' + (tr.left - br.left - over - gap - size) + 'px;top:' +
           (tr.top - br.top + (tr.height - size) / 2) + 'px;';
       } else { // no visible thumbnail bar (e.g. mobile): a floating toggle on the image
         stage.style.height = box.clientHeight + 'px';
